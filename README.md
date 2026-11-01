@@ -85,7 +85,7 @@ pip install pyserial pillow
 dsh plugin --profile desktop add github:wellwelc/dsh-autoPID
 
 # 或者装 release 里的 tgz
-dsh plugin --profile desktop add https://github.com/wellwelc/dsh-autoPID/releases/download/v0.3.0/dsh-autopid-0.3.0.tgz
+dsh plugin --profile desktop add https://github.com/wellwelc/dsh-autoPID/releases/download/v0.3.1/dsh-autopid-0.3.1.tgz
 
 # 或者本地开发：link 进去
 dsh plugin --profile desktop add link:<本仓库绝对路径>
@@ -161,6 +161,16 @@ score = 100
 权重调高 → 模型更在意那一项；想让它别把车调抖，就把 `tuneKpOsc` 拉大。**规则里写死的红线不受权重影响**，权重只决定取舍方向。
 
 改完 `rules/tuning-rules.md` 不用重启，下次调 `autopid_tuning_rules` 就是新版。
+
+### 调参卡（你自己写的那个文件）
+
+`rules/tuning-rules.md` 是**读一遍就够**的长手册；**调参卡**是**每轮都挂在系统提示里**的那段话，内容由**人**决定：
+
+- 卡本体 = `rules/tuning-card.md`，**直接改这个文件就行**，改完对下一轮生效（插件每轮现读，不缓存、不用重启）
+- 想放到自己习惯的位置：设置里 `tuningCardPath` 填绝对路径（留空 = 用插件自带那份）
+- 不想让它常驻：`tuningCard` 关掉，那样只有模型主动调 `autopid_tuning_rules` 才看得到规则
+- 卡里写 `{{kpOsc}}` `{{kiOsc}}` `{{speed}}` `{{steady}}` 会被替换成滑块上的当前值；不写就原样注入
+- 文件读不到时退回一段内置兜底文案，不会让插件报错
 
 ## 单片机的 printf 要长什么样
 
