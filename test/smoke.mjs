@@ -9,6 +9,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// 用临时 DSH_HOME，别把测试写进真实的设置文件
+process.env.DSH_HOME = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'out', 'test-dsh-smoke');
+fs.rmSync(process.env.DSH_HOME, { recursive: true, force: true });
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = 8767;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -132,6 +136,14 @@ try {
   console.log('cmd 配置 =', cmdCfg.cmd_start, '/', cmdCfg.cmd_stop, '/', cmdCfg.cmd_reset);
   if (cmdCfg.cmd_start !== 'GO' || cmdCfg.cmd_reset !== 'RST') fail('指令正文没同步到桥');
   if (cmdCfg.set_format !== 'named') fail('set_format 没同步到桥');
+
+  // 图形化配置对应的工具：读得到、改得动、写盘
+  const cfgTool = await tools.get('autopid_config').execute({});
+  if (cfgTool.config?.paramNames !== 'kp,ki,kd') fail(`autopid_config 读到的参数名不对：${cfgTool.config?.paramNames}`);
+  const patched = await tools.get('autopid_config').execute({ patch: { setFormat: 'positional' } });
+  if (patched.config?.setFormat !== 'positional') fail('autopid_config 改 setFormat 没生效');
+  if (!fs.existsSync(patched.file)) fail('autopid_config 没把设置写进磁盘');
+  console.log('autopid_config 写盘 =', patched.file);
 
   const plot = await tools.get('autopid_plot').execute({ window: 2 });
   const bytes = fs.readFileSync(plot.png_path);

@@ -7,6 +7,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+// 用临时 DSH_HOME，别把测试写进真实的设置文件
+process.env.DSH_HOME = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'out', 'test-dsh-web');
+fs.rmSync(process.env.DSH_HOME, { recursive: true, force: true });
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = 8799;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -97,12 +101,19 @@ try {
     },
   };
 
-  mod.apply(ctx, { python: 'python', httpPort: PORT, port: '', baud: 115200 });
+  mod.apply(ctx, {
+    python: 'python',
+    httpPort: PORT,
+    port: '',
+    baud: 115200,
+    paramNames: 'kp,ki,kd',
+    cmdStart: 'START',
+  });
 
-  check('八个工具都注册了', tools.length === 8 && tools.includes('autopid_samples') && tools.includes('autopid_command'),
-    tools.join(','));
+  check('九个工具都注册了', tools.length === 9 && tools.includes('autopid_samples')
+    && tools.includes('autopid_command') && tools.includes('autopid_config'), tools.join(','));
   const paths = [...handlers.keys()].sort();
-  check('九条路由都挂上了', paths.length === 9, paths.join(' '));
+  check('十条路由都挂上了', paths.length === 10, paths.join(' '));
 
   // 等模拟数据攒一点
   await sleep(1200);
@@ -146,6 +157,28 @@ try {
     { url: '/api/autopid/command', method: 'POST', body: { action: 'start' } });
   const cmdJson = JSON.parse(cmd.body.toString());
   check('POST /command 没开串口时老实报失败', cmdJson.ok === false, `error=${cmdJson.error}`);
+
+  const settings0 = await call(handlers.get('/api/autopid/settings'), { url: '/api/autopid/settings' });
+  const settingsJson = JSON.parse(settings0.body.toString());
+  check('GET /settings 回配置和文件路径',
+    settingsJson.ok === true && typeof settingsJson.file === 'string' && settingsJson.file.includes('settings.json'),
+    settingsJson.file);
+
+  const saved = await call(handlers.get('/api/autopid/settings'), {
+    url: '/api/autopid/settings',
+    method: 'POST',
+    body: { channels: 2, channelNames: 'L,R', paramNames: 'p,i,d', cmdStart: 'GO' },
+  });
+  const savedJson = JSON.parse(saved.body.toString());
+  check('POST /settings 生效并写盘',
+    savedJson.ok === true && savedJson.config.channels === 2 && savedJson.config.paramNames === 'p,i,d'
+      && fs.existsSync(savedJson.file),
+    `channels=${savedJson.config?.channels} file=${savedJson.file}`);
+
+  const cfg2 = await call(handlers.get('/api/autopid/config'), { url: '/api/autopid/config' });
+  const cfg2Json = JSON.parse(cfg2.body.toString());
+  check('改完立刻同步给桥', (cfg2Json.param_names ?? []).join(',') === 'p,i,d' && cfg2Json.cmd_start === 'GO',
+    `param_names=${JSON.stringify(cfg2Json.param_names)} cmd_start=${cfg2Json.cmd_start}`);
 
   const forbidden = await call(handlers.get('/api/autopid/state'),
     { url: '/api/autopid/state', ip: '10.0.0.9' });

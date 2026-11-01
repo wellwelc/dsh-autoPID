@@ -27,7 +27,9 @@
 
 **选哪段让模型自己判断**：`autopid_stats` 给统计（峰峰值、振荡频率），模型据此决定画哪一段，再 `autopid_plot` 指定 `start/end` 出图。
 
-## 可编辑的配置
+## 可编辑的配置（不用碰文件）
+
+在**设置 → 插件 → 自动调参**里有一张「配置」卡片，这些字段直接填、点保存就生效：
 
 | 字段 | 作用 |
 |---|---|
@@ -37,6 +39,14 @@
 | `paramNames` | 下发参数的名字和个数（`kp,ki,kd`），顺序就是数值顺序 |
 | `setFormat` | `positional` → `SET 1.2 0.03 0.3`；`named` → `SET kp=1.2 ki=0.03 kd=0.3` |
 | `cmdStart` / `cmdStop` / `cmdReset` | 「启动 / 停止 / 重来」三条指令的正文，想发什么文本都行 |
+
+**存在哪**：`$DSH_HOME/autopid/settings.json`（默认 `C:\Users\<你>\.dsh\autopid\settings.json`），面板底部会显示实际路径。
+
+**怎么生效**：保存 → 写盘 → 立刻 `POST /configure` 推给桥，**不用重启 DSH，也不用重启桥**。
+
+**优先级**：`settings.json` > `cordis.patch.yml` 里的默认值。也就是说，只要你在面板里保存过一次，那几项就以文件为准；DSH 设置 → 插件里那个由 schema 生成的表单仍然是同一套字段（改它会写回 cordis 配置），但被 settings.json 里存过的值盖住时不会生效。
+
+**模型也能改**：`autopid_config` 工具，`patch` 传要改的字段；不传就是只读。
 
 ## 数据格式（单片机 printf 这一侧）
 
@@ -95,6 +105,7 @@ dsh plugin --profile desktop add link:<本仓库绝对路径>
 | `autopid_plot` | 出图，支持 `window` / `start,end` / `channels` / `normalize`；**只回文件路径，不内联图片** |
 | `autopid_set` | 按 `paramNames` / `setFormat` 下发参数（或 `raw` 发原文），**并回报发完之后 `waitMs` 内有没有新数据进来** |
 | `autopid_command` | **启动 / 停止 / 重来**（`action: start\|stop\|reset`，或 `raw` 发任意文本），正文来自配置；同样回报有没有新数据 |
+| `autopid_config` | 读 / 改配置（跟面板那张「配置」卡片是同一份数据，改完立即生效并写盘） |
 
 下发类工具的回执是刻意分开说的：「新来了 N 行」= 单片机有反应；「一行都没有」= **只是没观察到**，不等于指令没生效，别当成反证。
 

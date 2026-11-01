@@ -60,6 +60,18 @@ window.__ModuleLoader__.load({
         reset: '重来',
         cmdHelp: '这三条指令的正文在插件配置里改（cmdStart / cmdStop / cmdReset），想发什么都行。',
         csvLine: 'CSV：{path}',
+        configTitle: '配置（在这里改，不用动文件）',
+        csvPathLabel: 'CSV 落盘路径（空 = 不落盘）',
+        channelsLabel: '通道数（0 = 自动）',
+        channelNamesLabel: '通道名（逗号分隔）',
+        paramNamesLabel: '参数名（逗号分隔，顺序=数值顺序）',
+        setFormatLabel: '下发格式',
+        save: '保存',
+        saving: '保存中…',
+        saved: '存好了，已经生效',
+        saveFail: '没存上',
+        configHint: '保存后立刻写进设置文件，并同步给串口桥，不用重启。这些字段和 DSH 设置页那份表单是同一套配置。',
+        configFile: '设置文件：{path}',
         csvOff: '没配（不落盘；在插件配置的 csvPath 里填绝对路径）',
         chanLine: '通道：{n} 路（{names}）',
         chanAuto: '配置里没写通道名',
@@ -105,6 +117,18 @@ window.__ModuleLoader__.load({
         reset: 'Reset',
         cmdHelp: 'The texts come from the plugin config (cmdStart / cmdStop / cmdReset); anything works.',
         csvLine: 'CSV: {path}',
+        configTitle: 'Settings (edit here; no files needed)',
+        csvPathLabel: 'CSV output path (empty = off)',
+        channelsLabel: 'Channels (0 = auto)',
+        channelNamesLabel: 'Channel names (comma separated)',
+        paramNamesLabel: 'Parameter names (comma separated, order = value order)',
+        setFormatLabel: 'Send format',
+        save: 'Save',
+        saving: 'Saving…',
+        saved: 'Saved and applied',
+        saveFail: 'Save failed',
+        configHint: 'Saved to the settings file and pushed to the bridge immediately; no restart needed. Same config as the DSH settings form.',
+        configFile: 'Settings file: {path}',
         csvOff: 'not configured (no CSV file; set csvPath in the plugin config)',
         chanLine: 'Channels: {n} ({names})',
         chanAuto: 'no channel names configured',
@@ -143,6 +167,13 @@ window.__ModuleLoader__.load({
 .ap-warn{color:var(--dsw-alias-state-error-primary);font-size:12px}
 .ap-ok{color:var(--dsw-alias-state-success-primary);font-size:12px}
 .ap-foot{color:var(--dsw-alias-label-secondary);font-size:11px}
+.ap-grid{display:flex;gap:10px;flex-wrap:wrap}
+.ap-field{display:flex;flex-direction:column;gap:4px;min-width:150px;flex:1 1 150px}
+.ap-field.wide{flex:1 1 320px}
+.ap-field .ap-label{white-space:nowrap}
+.ap-details{border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1);padding:10px 14px}
+.ap-details>summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary)}
+.ap-details[open]>summary{margin-bottom:10px}
 `;
 
     // ── 共享状态：面板可能开开关关，轮询只留一份 ──────────────────
@@ -233,6 +264,26 @@ window.__ModuleLoader__.load({
       // 参数名和个数由配置决定（param_names），界面跟着它长
       const [cfgInfo, setCfgInfo] = React.useState(null);
       const [values, setValues] = React.useState([]);
+      // 图形化配置：draft 是正在编辑的那份，settings 是已经存下来的那份
+      const [settings, setSettings] = React.useState(null);
+      const [draft, setDraft] = React.useState(null);
+      const [saveMsg, setSaveMsg] = React.useState(null);
+      const [settingsFile, setSettingsFile] = React.useState('');
+
+      const loadSettings = React.useCallback(async () => {
+        try {
+          const json = await getJson('/settings');
+          if (json?.ok === false) {
+            setSaveMsg({ ok: false, text: String(json.error ?? '读设置失败') });
+            return;
+          }
+          setSettings(json.config ?? null);
+          setSettingsFile(String(json.file ?? ''));
+          setDraft((prev) => prev ?? { ...(json.config ?? {}) });
+        } catch (error) {
+          setSaveMsg({ ok: false, text: String(error?.message ?? error) });
+        }
+      }, []);
 
       const paramNames = React.useMemo(
         () => (Array.isArray(cfgInfo?.param_names) ? cfgInfo.param_names : []),
@@ -293,9 +344,43 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         if (ports === null) void loadPorts();
         if (cfgInfo === null) void loadConfig();
+        if (settings === null) void loadSettings();
         if (status?.port && !port) setPort(String(status.port));
         if (status?.baud) setBaud(Number(status.baud));
-      }, [ports, cfgInfo, status?.port, status?.baud]); // eslint-disable-line react-hooks/exhaustive-deps
+      }, [ports, cfgInfo, settings, status?.port, status?.baud]); // eslint-disable-line react-hooks/exhaustive-deps
+
+      const setField = (key, value) => {
+        setDraft((prev) => ({ ...(prev ?? {}), [key]: value }));
+      };
+
+      const saveSettingsDraft = () => {
+        if (!draft) return;
+        setBusy('save-settings');
+        setSaveMsg(null);
+        void postJson('/settings', {
+          csvPath: draft.csvPath,
+          channels: draft.channels,
+          channelNames: draft.channelNames,
+          paramNames: draft.paramNames,
+          setFormat: draft.setFormat,
+          cmdStart: draft.cmdStart,
+          cmdStop: draft.cmdStop,
+          cmdReset: draft.cmdReset,
+        })
+          .then((r) => {
+            if (r?.ok) {
+              setSettings(r.config ?? null);
+              setDraft({ ...(r.config ?? {}) });
+              setSaveMsg({ ok: true, text: t('saved') });
+              // 参数名/通道名改了，上面那块要跟着变
+              void loadConfig();
+            } else {
+              setSaveMsg({ ok: false, text: String(r?.error ?? t('saveFail')) });
+            }
+          })
+          .catch((error) => setSaveMsg({ ok: false, text: String(error?.message ?? error) }))
+          .finally(() => setBusy(null));
+      };
 
       const run = (kind, task) => {
         setBusy(kind);
@@ -528,6 +613,115 @@ window.__ModuleLoader__.load({
             }, busy === `cmd-${action}` ? '…' : t(action))),
           ]),
           h('div', { key: 'help', className: 'ap-hint' }, t('cmdHelp')),
+        ]),
+
+        h('details', { key: 'cfg', className: 'ap-details', open: true }, [
+          h('summary', { key: 'sum' }, t('configTitle')),
+          h('div', { key: 'body', style: { display: 'flex', flexDirection: 'column', gap: '10px' } }, [
+            h('div', { key: 'grid1', className: 'ap-grid' }, [
+              h('label', { key: 'csv', className: 'ap-field wide' }, [
+                h('span', { key: 'l', className: 'ap-label' }, t('csvPathLabel')),
+                h('input', {
+                  key: 'i',
+                  className: 'ap-input',
+                  type: 'text',
+                  value: draft?.csvPath ?? '',
+                  placeholder: 'C:\\\\data\\\\pid.csv',
+                  onChange: (e) => setField('csvPath', e.target.value),
+                }),
+              ]),
+              h('label', { key: 'ch', className: 'ap-field' }, [
+                h('span', { key: 'l', className: 'ap-label' }, t('channelsLabel')),
+                h('input', {
+                  key: 'i',
+                  className: 'ap-input',
+                  type: 'number',
+                  min: 0,
+                  max: 64,
+                  value: draft?.channels ?? 0,
+                  onChange: (e) => setField('channels', Number(e.target.value) || 0),
+                }),
+              ]),
+            ]),
+            h('div', { key: 'grid2', className: 'ap-grid' }, [
+              h('label', { key: 'cn', className: 'ap-field wide' }, [
+                h('span', { key: 'l', className: 'ap-label' }, t('channelNamesLabel')),
+                h('input', {
+                  key: 'i',
+                  className: 'ap-input',
+                  type: 'text',
+                  value: draft?.channelNames ?? '',
+                  placeholder: 'L,R,PL,PR',
+                  onChange: (e) => setField('channelNames', e.target.value),
+                }),
+              ]),
+              h('label', { key: 'pn', className: 'ap-field wide' }, [
+                h('span', { key: 'l', className: 'ap-label' }, t('paramNamesLabel')),
+                h('input', {
+                  key: 'i',
+                  className: 'ap-input',
+                  type: 'text',
+                  value: draft?.paramNames ?? '',
+                  placeholder: 'kp,ki,kd',
+                  onChange: (e) => setField('paramNames', e.target.value),
+                }),
+              ]),
+              h('label', { key: 'sf', className: 'ap-field' }, [
+                h('span', { key: 'l', className: 'ap-label' }, t('setFormatLabel')),
+                h('select', {
+                  key: 'i',
+                  className: 'ap-select',
+                  value: draft?.setFormat ?? 'positional',
+                  onChange: (e) => setField('setFormat', e.target.value),
+                }, [
+                  h('option', { key: 'p', value: 'positional' }, 'SET 1.2 0.03 0.3'),
+                  h('option', { key: 'n', value: 'named' }, 'SET kp=1.2 ki=0.03 kd=0.3'),
+                ]),
+              ]),
+            ]),
+            h('div', { key: 'grid3', className: 'ap-grid' }, [
+              h('label', { key: 'c1', className: 'ap-field' }, [
+                h('span', { key: 'l', className: 'ap-label' }, t('start')),
+                h('input', {
+                  key: 'i', className: 'ap-input', type: 'text',
+                  value: draft?.cmdStart ?? '',
+                  onChange: (e) => setField('cmdStart', e.target.value),
+                }),
+              ]),
+              h('label', { key: 'c2', className: 'ap-field' }, [
+                h('span', { key: 'l', className: 'ap-label' }, t('stop')),
+                h('input', {
+                  key: 'i', className: 'ap-input', type: 'text',
+                  value: draft?.cmdStop ?? '',
+                  onChange: (e) => setField('cmdStop', e.target.value),
+                }),
+              ]),
+              h('label', { key: 'c3', className: 'ap-field' }, [
+                h('span', { key: 'l', className: 'ap-label' }, t('reset')),
+                h('input', {
+                  key: 'i', className: 'ap-input', type: 'text',
+                  value: draft?.cmdReset ?? '',
+                  onChange: (e) => setField('cmdReset', e.target.value),
+                }),
+              ]),
+            ]),
+            h('div', { key: 'actions', className: 'ap-row' }, [
+              h('button', {
+                key: 'save',
+                type: 'button',
+                className: 'ap-btn primary',
+                disabled: busy !== null || draft === null,
+                onClick: saveSettingsDraft,
+              }, busy === 'save-settings' ? t('saving') : t('save')),
+              saveMsg
+                ? h('span', { key: 'msg', className: saveMsg.ok ? 'ap-ok' : 'ap-warn' }, saveMsg.text)
+                : null,
+            ]),
+            h('div', { key: 'hint', className: 'ap-hint' }, t('configHint')),
+            settingsFile
+              ? h('div', { key: 'file', className: 'ap-foot' }, t('configFile').replace('{path}', settingsFile))
+              : null,
+          ]),
         ]),
 
         h('div', { key: 'foot', className: 'ap-foot' }, [

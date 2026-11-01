@@ -1,0 +1,6 @@
+{
+  "channels": 2,
+  "channelNames": "L,R",
+  "paramNames": "p,i,d",
+  "cmdStart": "GO"
+}
