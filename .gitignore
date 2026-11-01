@@ -5,3 +5,8 @@ __pycache__/
 !docs/*.png
 .DS_Store
 Thumbs.db
+
+scratch/
+
+bridge/*.log
+bridge/*.log.err

@@ -1,11 +1,13 @@
-# dsh-autoPID —— 串口波形图 + PID 调参工具
+# dsh-autoPID —— 串口波形图 + PID 调参
 #
-# 这是一个 **纯 host 插件**：没有 client 半，不会往 WebUI 里塞页面。
-# 波形以图片形式从工具结果直接回到对话里。
+# 两半：
+#   Host   （lib/index.js）把 bridge 拉起来，包成工具；再挂 /api/autopid/* 同源路由
+#          （设置页那块面板走它，端口改了页面不用动）
+#   Client （client.js）在「设置 → 插件 → 自动调参」里画实时波形、开关串口、下发参数
 #
-# 串口那半边交给 bridge/bridge.py（Python + pyserial），插件只负责：
-#   1. 需要时把 bridge 拉起来
-#   2. 把 /status /stats /plot /set 包成工具给模型用
+# 串口那半边交给 bridge/bridge.py（Python + pyserial）。
+#
+# 注意：inject 里带 webServer，只有 web 侧组合才有这个服务 —— 别装进 headless profile。
 #
 # config 里的字段会同时出现在 DSH 的设置页里（可热改）。
 - insert:

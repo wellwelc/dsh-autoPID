@@ -6,6 +6,7 @@
 //
 // 结束时会把 bridge 子进程收掉，不然 Node 会被它挂住退不出来。
 
+import fs from 'node:fs';
 import { apply } from '../lib/index.js';
 
 const simulate = process.argv.includes('--simulate');
@@ -47,14 +48,16 @@ try {
   console.log('stats.points =', stats.points, '| channels =', stats.channels);
 
   const plot = await tools.get('autopid_plot').execute({ window: 2 });
-  const bytes = Buffer.from(plot.png_base64, 'base64');
-  console.log('png bytes =', bytes.length);
+  const bytes = fs.readFileSync(plot.png_path);
+  console.log('png 落盘 =', plot.png_path, '| bytes =', bytes.length);
   if (bytes.length < 1000) throw new Error('图片太小，可能是空图');
 
   const rendered = tools.get('autopid_plot').output.render({}, plot);
   const kinds = rendered.map((p) => p.type).join(',');
   console.log('render 段 =', kinds);
-  if (!kinds.includes('image')) throw new Error('render 没有产出 image');
+  // 2026-11-01：render 里绝不能出现 image（会让会话永久失败），只允许 text
+  if (kinds.includes('image')) throw new Error('render 里出现了 image 段 —— 会毒死会话');
+  if (!kinds.includes('text')) throw new Error('render 没有产出 text');
 
   console.log('OK');
 } finally {

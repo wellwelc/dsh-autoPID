@@ -58,6 +58,8 @@ STATUS = {
 }
 RAW_SUBSCRIBERS = []                     # 给 /raw 转发用（VOFA+ 可以挂 TCP）
 STOP = threading.Event()
+# 当前采集线程的"停"信号（换串口时只停这一根，不惊动整个进程）
+WORKER = {"event": None, "thread": None, "mode": None}
 
 PALETTE = [
     "#2E86DE", "#EE5A24", "#10AC84", "#8C7AE6",
@@ -136,9 +138,10 @@ def parse_line(raw: bytes):
 
 # ---------------------------------------------------------------- 串口线程
 
-def serial_worker(port, baud):
+def serial_worker(port, baud, stop_event=None):
     global SERIAL_OBJ, CHANNEL_COUNT
-    while not STOP.is_set():
+    stop_event = stop_event or STOP
+    while not stop_event.is_set():
         try:
             ser = serial.Serial(port, baud, timeout=0.2)
             with SERIAL_LOCK:
@@ -148,7 +151,7 @@ def serial_worker(port, baud):
                 STATUS["port"] = port
                 STATUS["baud"] = baud
                 STATUS["last_error"] = None
-            while not STOP.is_set():
+            while not stop_event.is_set():
                 try:
                     raw = ser.readline()
                 except Exception as e:
@@ -177,7 +180,7 @@ def serial_worker(port, baud):
             with LOCK:
                 STATUS["connected"] = False
                 STATUS["last_error"] = str(e)
-            time.sleep(2.0)
+            stop_event.wait(2.0)
         finally:
             with SERIAL_LOCK:
                 if SERIAL_OBJ is not None:
@@ -188,16 +191,17 @@ def serial_worker(port, baud):
                     SERIAL_OBJ = None
 
 
-def simulate_worker():
+def simulate_worker(stop_event=None):
     """没有硬件时的假数据：一路方波(模拟 P 振荡) + 一路斜坡 + 一路噪声。"""
     global CHANNEL_COUNT
+    stop_event = stop_event or STOP
     CHANNEL_COUNT = 3
     t0 = time.time()
     with LOCK:
         STATUS["connected"] = True
         STATUS["port"] = "SIMULATE"
         STATUS["baud"] = 0
-    while not STOP.is_set():
+    while not stop_event.is_set():
         t = time.time() - t0
         a = 1200 * math.sin(2 * math.pi * 2.0 * t) + 900 * math.sin(2 * math.pi * 11.0 * t)
         b = 900 + 200 * math.sin(2 * math.pi * 0.3 * t)
@@ -207,7 +211,63 @@ def simulate_worker():
             BUFFER.append((time.time(), vals))
             STATUS["lines"] += 1
             STATUS["last_line"] = ",".join(str(v) for v in vals)
-        time.sleep(0.01)
+        stop_event.wait(0.01)
+
+
+# ---------------------------------------------------------------- 换串口
+
+def stop_worker():
+    """停掉当前采集线程，把串口让出来（换口 / 关掉时用）。"""
+    ev = WORKER.get("event")
+    if ev is not None:
+        ev.set()
+    with SERIAL_LOCK:
+        ser = SERIAL_OBJ
+    if ser is not None:
+        try:
+            ser.close()
+        except Exception:
+            pass
+    th = WORKER.get("thread")
+    if th is not None and th.is_alive():
+        th.join(timeout=1.5)
+    WORKER["event"] = None
+    WORKER["thread"] = None
+    WORKER["mode"] = None
+
+
+def start_worker(mode, port=None, baud=115200):
+    """起一根新的采集线程。mode: 'serial' / 'simulate'。"""
+    global CHANNEL_COUNT
+    stop_worker()
+    ev = threading.Event()
+    if mode == "simulate":
+        CHANNEL_COUNT = 0
+        with LOCK:
+            STATUS["connected"] = False
+            STATUS["port"] = None
+            STATUS["baud"] = None
+        th = threading.Thread(target=simulate_worker, args=(ev,), daemon=True)
+    else:
+        with LOCK:
+            STATUS["connected"] = False
+            STATUS["port"] = port
+            STATUS["baud"] = baud
+            STATUS["last_error"] = None
+        th = threading.Thread(target=serial_worker, args=(port, baud, ev), daemon=True)
+    WORKER["event"] = ev
+    WORKER["thread"] = th
+    WORKER["mode"] = mode
+    th.start()
+    return mode
+
+
+def worker_state():
+    th = WORKER.get("thread")
+    return {
+        "mode": WORKER.get("mode"),
+        "alive": bool(th is not None and th.is_alive()),
+    }
 
 
 # ---------------------------------------------------------------- 统计
@@ -421,9 +481,15 @@ class Handler(BaseHTTPRequestHandler):
                 st = dict(STATUS)
                 st["buffer"] = len(BUFFER)
                 st["channels"] = CHANNEL_COUNT
+                # 未开串口时 port/baud/last_error 是 None；上层工具把它们声明成了
+                # string / number，返回 null 会被 DSH 的输出校验打回来（2026-11-01 踩过）。
+                st["port"] = st.get("port") or ""
+                st["baud"] = st.get("baud") or 0
+                st["last_error"] = st.get("last_error") or ""
                 if BUFFER:
                     st["oldest_age"] = round(time.time() - BUFFER[0][0], 2)
                     st["newest_age"] = round(time.time() - BUFFER[-1][0], 2)
+            st.update(worker_state())
             self._json(st)
             return
 
@@ -534,6 +600,31 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": ok, "error": err, "sent": data.strip()})
             return
 
+        if path == "/open":
+            # 换串口 / 没插的话切模拟：{"port":"COM3","baud":115200} 或 {"simulate":true}
+            if body.get("simulate"):
+                mode = start_worker("simulate")
+                self._json({"ok": True, "mode": mode})
+                return
+            port = (body.get("port") or "").strip()
+            if not port:
+                self._json({"ok": False, "error": "缺少 port"}, 400)
+                return
+            baud = int(body.get("baud") or 115200)
+            if serial is None:
+                self._json({"ok": False, "error": "pyserial 未安装"}, 500)
+                return
+            mode = start_worker("serial", port, baud)
+            self._json({"ok": True, "mode": mode, "port": port, "baud": baud})
+            return
+
+        if path == "/close":
+            stop_worker()
+            with LOCK:
+                STATUS["connected"] = False
+            self._json({"ok": True})
+            return
+
         if path == "/clear":
             with LOCK:
                 BUFFER.clear()
@@ -574,13 +665,13 @@ def main():
 
     if args.simulate:
         print("[bridge] simulate mode")
-        threading.Thread(target=simulate_worker, daemon=True).start()
+        start_worker("simulate")
     elif args.port:
         if serial is None:
             print("[bridge] pyserial 未安装：pip install pyserial", file=sys.stderr)
             sys.exit(2)
         print(f"[bridge] opening {args.port} @ {args.baud}")
-        threading.Thread(target=serial_worker, args=(args.port, args.baud), daemon=True).start()
+        start_worker("serial", args.port, args.baud)
     else:
         print("[bridge] 没有 --port 也没有 --simulate，只跑 HTTP（空数据）")
 
@@ -592,6 +683,7 @@ def main():
         pass
     finally:
         STOP.set()
+        stop_worker()
         srv.server_close()
 
 

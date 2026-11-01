@@ -1,13 +1,30 @@
 {
   "name": "dsh-autopid",
-  "version": "0.1.0",
-  "description": "DSH autoPID: 串口波形图 + PID 自动整定的工具插件（串口由 Python 桥负责，波形以 PNG 直接回到对话里）",
+  "version": "0.2.0",
+  "description": "DSH autoPID: 串口波形 + PID 自动整定的工具插件（串口由 Python 桥负责，波形显示在「设置 → 插件 → 自动调参」里）",
   "type": "module",
   "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./client.js"
+  },
+  "files": [
+    "lib/index.js",
+    "client.js",
+    "bridge/bridge.py",
+    "bridge/requirements.txt",
+    "cordis.patch.yml",
+    "README.md"
+  ],
   "license": "MIT",
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": ["@deepseek-ai/dsh-client-ui-settings"]
     }
   },
   "dependencies": {
