@@ -1,0 +1,18 @@
+# dsh-autoPID —— 串口波形图 + PID 调参工具
+#
+# 这是一个 **纯 host 插件**：没有 client 半，不会往 WebUI 里塞页面。
+# 波形以图片形式从工具结果直接回到对话里。
+#
+# 串口那半边交给 bridge/bridge.py（Python + pyserial），插件只负责：
+#   1. 需要时把 bridge 拉起来
+#   2. 把 /status /stats /plot /set 包成工具给模型用
+#
+# config 里的字段会同时出现在 DSH 的设置页里（可热改）。
+- insert:
+    - id: dsh-autopid
+      name: dsh-autopid
+      config:
+        python: python
+        httpPort: 8765
+        port: ''
+        baud: 115200
