@@ -99,7 +99,8 @@ try {
 
   mod.apply(ctx, { python: 'python', httpPort: PORT, port: '', baud: 115200 });
 
-  check('工具照旧注册了', tools.length === 6, tools.join(','));
+  check('七个工具都注册了', tools.length === 7 && tools.includes('autopid_samples'),
+    tools.join(','));
   const paths = [...handlers.keys()].sort();
   check('七条路由都挂上了', paths.length === 7, paths.join(' '));
 

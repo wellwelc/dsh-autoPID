@@ -494,15 +494,22 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/ports":
-            ports = []
-            if serial is not None:
-                try:
-                    for p in list_ports.comports():
-                        ports.append({"device": p.device, "desc": p.description})
-                except Exception as e:
-                    self._json({"error": str(e)}, 500)
-                    return
-            self._json({"ports": ports})
+            # 三种情况必须区分开，不能都回一个空数组：
+            #   ① pyserial 没装（列不出来）② 枚举抛异常 ③ 真的一个串口都没有
+            # 混在一起的话，界面上只能显示"没找到串口"，人根本不知道是哪种。
+            if serial is None:
+                self._json({
+                    "ports": [],
+                    "error": "pyserial 没装成功（import serial 失败），这一侧列不出串口；先 pip install pyserial",
+                })
+                return
+            try:
+                ports = [{"device": p.device, "desc": p.description}
+                         for p in list_ports.comports()]
+            except Exception as e:
+                self._json({"ports": [], "error": f"枚举串口失败：{e}"})
+                return
+            self._json({"ports": ports, "error": ""})
             return
 
         if path == "/stats":
@@ -521,17 +528,34 @@ class Handler(BaseHTTPRequestHandler):
                 limit = int(q.get("limit", ["200"])[0])
             except ValueError:
                 limit = 200
+            limit = max(1, min(5000, limit))
             start = q.get("start", [None])[0]
             end = q.get("end", [None])[0]
             s = float(start) if start else None
             e = float(end) if end else None
             rows = snapshot(s, e)
-            if len(rows) > limit:
-                step = max(1, len(rows) // limit)
+            total = len(rows)
+            if total > limit:
+                step = max(1, total // limit)
                 rows = rows[::step]
+            # 选通道：和 /plot 一样，只回被点名的那几路
+            picks = None
+            ch = q.get("ch", [None])[0]
+            if ch:
+                picks = [int(x) for x in ch.split(",") if x.strip().isdigit()]
+            out_rows = []
+            for t, vals in rows:
+                if picks is None:
+                    keep = vals
+                else:
+                    keep = [vals[i] if 0 <= i < len(vals) else None for i in picks]
+                out_rows.append([round(t, 4)] + keep)
             self._json({
-                "t0": rows[0][0] if rows else None,
-                "rows": [[round(t, 4)] + v for (t, v) in rows],
+                "t0": out_rows[0][0] if out_rows else None,
+                "rows": out_rows,
+                "total": total,
+                "returned": len(out_rows),
+                "truncated": len(out_rows) < total,
             })
             return
 

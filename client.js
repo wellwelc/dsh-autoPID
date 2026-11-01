@@ -2,7 +2,7 @@
  * dsh-autoPID —— Client 半边（Web 页面那一半）。
  *
  * 在「设置 → 插件 → 自动调参」里挂一个面板：
- *   ① 串口控制（选口 / 波特率 / 打开 / 模拟数据 / 关闭）
+ *   ① 串口控制（选口 / 波特率 / 打开 / 关闭）
  *   ② 实时波形（PNG 每秒重取一次，走 Host 的同源路由，不直连桥的端口）
  *   ③ 参数下发（kp / ki / kd → "SET ..."）
  *
@@ -35,13 +35,13 @@ window.__ModuleLoader__.load({
         port: '串口',
         baud: '波特率',
         open: '打开',
-        simulate: '模拟数据',
         close: '关闭',
         window: '时间窗',
         normalize: '各自归一化',
         channels: '通道',
         channelsHint: '留空=全部，例如 0,1',
         noPorts: '没找到串口（单片机插上了再点刷新）',
+        connecting: '正在连桥…',
         connected: '已连接',
         disconnected: '未连接',
         simulating: '模拟数据中',
@@ -49,7 +49,7 @@ window.__ModuleLoader__.load({
         points: '缓冲 {n} 点',
         chans: '{n} 通道',
         age: '最新 {n}s 前',
-        noData: '还没有数据：选个串口点「打开」，或者点「模拟数据」先看看出图效果。',
+        noData: '还没有数据：选个串口点「打开」。没有硬件时可以用 autopid_open 的 simulate 让模型那边出一路假数据。',
         bridgeDown: '桥没起来：{error}',
         params: '参数下发',
         kp: 'kp',
@@ -72,13 +72,13 @@ window.__ModuleLoader__.load({
         port: 'Port',
         baud: 'Baud',
         open: 'Open',
-        simulate: 'Simulate',
         close: 'Close',
         window: 'Window',
         normalize: 'Normalize',
         channels: 'Channels',
         channelsHint: 'Empty = all, e.g. 0,1',
         noPorts: 'No serial ports found (plug the board in, then refresh)',
+        connecting: 'Connecting…',
         connected: 'Connected',
         disconnected: 'Not connected',
         simulating: 'Simulating',
@@ -86,7 +86,7 @@ window.__ModuleLoader__.load({
         points: '{n} points',
         chans: '{n} ch',
         age: 'newest {n}s ago',
-        noData: 'No data yet: pick a port and press Open, or press Simulate to see a demo waveform.',
+        noData: 'No data yet: pick a port and press Open. Without hardware, ask the agent for autopid_open simulate.',
         bridgeDown: 'Bridge is down: {error}',
         params: 'Parameters',
         kp: 'kp',
@@ -211,6 +211,7 @@ window.__ModuleLoader__.load({
       const [normalize, setNormalize] = React.useState(false);
       const [channels, setChannels] = React.useState('');
       const [ports, setPorts] = React.useState(null);
+      const [portError, setPortError] = React.useState('');
       const [port, setPort] = React.useState('');
       const [baud, setBaud] = React.useState(115200);
       const [kp, setKp] = React.useState('1.20');
@@ -224,14 +225,25 @@ window.__ModuleLoader__.load({
       const buffer = Number(status?.buffer ?? 0);
       const chanCount = Number(status?.channels ?? 0);
 
+      // 串口清单：桥刚起来那次查询很容易撞上"还没监听完"，所以失败要重试几次。
+      // 关键是"没查到"和"确实没有"要分开说 —— 空着不解释，人只会以为没插板子。
       const loadPorts = React.useCallback(async () => {
-        try {
-          const json = await getJson('/ports');
-          const list = Array.isArray(json?.ports) ? json.ports : [];
-          setPorts(list);
-          if (list.length && !port) setPort(list[0].device);
-        } catch {
-          setPorts([]);
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          try {
+            const json = await getJson('/ports');
+            const list = Array.isArray(json?.ports) ? json.ports : [];
+            setPorts(list);
+            setPortError(String(json?.error ?? ''));
+            if (list.length && !port) setPort(list[0].device);
+            return;
+          } catch (error) {
+            if (attempt === 2) {
+              setPorts([]);
+              setPortError(String(error?.message ?? error));
+            } else {
+              await new Promise((r) => setTimeout(r, 700));
+            }
+          }
         }
       }, [port]);
 
@@ -261,10 +273,6 @@ window.__ModuleLoader__.load({
           setResult(r);
           if (r?.ok) void loadPorts();
         }));
-      };
-
-      const openSimulate = () => {
-        run('sim', postJson('/open', { simulate: true }).then((r) => setResult(r)));
       };
 
       const closePort = () => {
@@ -345,10 +353,12 @@ window.__ModuleLoader__.load({
               className: 'ap-select',
               value: port,
               onChange: (e) => setPort(e.target.value),
-            }, (ports ?? []).length === 0
-              ? h('option', { key: 'none', value: '' }, t('noPorts'))
-              : (ports ?? []).map((p) => h('option', { key: p.device, value: p.device },
-                p.desc && p.desc !== 'n/a' ? `${p.device} · ${p.desc}` : p.device))),
+            }, ports === null
+              ? h('option', { key: 'wait', value: '' }, t('connecting'))
+              : ports.length === 0
+                ? h('option', { key: 'none', value: '' }, t('noPorts'))
+                : ports.map((p) => h('option', { key: p.device, value: p.device },
+                  p.desc && p.desc !== 'n/a' ? `${p.device} · ${p.desc}` : p.device))),
             h('span', { key: 'l2', className: 'ap-label' }, t('baud')),
             h('input', {
               key: 'baud',
@@ -366,13 +376,6 @@ window.__ModuleLoader__.load({
               disabled: busy !== null,
               onClick: openPort,
             }, busy === 'open' ? '…' : t('open')),
-            h('button', {
-              key: 'sim',
-              type: 'button',
-              className: 'ap-btn',
-              disabled: busy !== null,
-              onClick: openSimulate,
-            }, busy === 'sim' ? '…' : t('simulate')),
             h('button', {
               key: 'close',
               type: 'button',
@@ -409,6 +412,10 @@ window.__ModuleLoader__.load({
             }),
             h('span', { key: 'stats', className: 'ap-hint' }, statLine),
           ]),
+          // 查询失败的原因要露出来：空列表 + 一句"没找到串口"分不清是没插板子还是桥没起来。
+          portError
+            ? h('div', { key: 'portError', className: 'ap-warn' }, portError)
+            : null,
           result ? h('div', {
             key: 'result',
             className: result.ok ? 'ap-ok' : 'ap-warn',

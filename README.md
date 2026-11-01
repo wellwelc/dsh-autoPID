@@ -46,10 +46,12 @@ dsh plugin --profile desktop add link:<本仓库绝对路径>
 
 ## 设置页里的面板
 
-- 串口：选口、改波特率、打开 / 关闭 / 「模拟数据」（没硬件也能看波形）
+- 串口：选口、改波特率、打开 / 关闭
 - 时间窗：5 / 10 / 20 / 30 / 60 / 120 秒；可勾「各自归一化」（几路量级差很多时用）；可填通道（如 `0,1`）
 - 参数下发：kp / ki / kd → 发文本 `SET kp ki kd`
 - 波形每秒刷新一次，可以「暂停」定格看细节
+
+面板里没有「模拟数据」按钮 —— 没硬件时要假数据，让模型调 `autopid_open`（`simulate: true`）就行。
 
 ## 工具（给模型用）
 
@@ -59,8 +61,11 @@ dsh plugin --profile desktop add link:<本仓库绝对路径>
 | `autopid_open` | 打开 / 切换串口，`simulate:true` 切假数据 |
 | `autopid_status` | 连接状态、收了多少行、缓冲多少点、数据多旧 |
 | `autopid_stats` | 每通道 min/max/mean/rms/峰峰 + 振荡频率估计 |
+| `autopid_samples` | **读原始采样点**（时间戳 + 各通道数值），支持 `window` / `start,end` / `limit` / `channels`；想自己算超调、上升时间、稳态误差用它 |
 | `autopid_plot` | 出图，支持 `window` / `start,end` / `channels` / `normalize`；**只回文件路径，不内联图片** |
-| `autopid_set` | 下发参数，默认发 `SET v1 v2 v3\n` |
+| `autopid_set` | 下发参数（`SET v1 v2 v3\n`，或 `raw` 发原文），**并回报发完之后 `waitMs` 内有没有新数据进来** |
+
+`autopid_set` 的回执是刻意分开说的：「新来了 N 行」= 单片机有反应；「一行都没有」= **只是没观察到**，不等于参数没生效，别当成反证。
 
 ## 单片机这边要输出什么
 
@@ -111,7 +116,7 @@ dsh-autoPID/
 ├── client.js             # Client 半：「设置 → 插件 → 自动调参」面板
 ├── bridge/bridge.py      # 串口读写 + 缓冲 + HTTP + Pillow 画图
 ├── bridge/requirements.txt
-├── test/smoke.mjs        # 工具那半（不启动 DSH）
+├── test/smoke.mjs        # 工具那半（自己起模拟 bridge）
 ├── test/web-routes.mjs   # /api/autopid/* 那半（真起 bridge）
 ├── test/client-half.mjs  # Client 半的装配（不渲染 React）
 ├── cordis.patch.yml
@@ -121,16 +126,14 @@ dsh-autoPID/
 ## 自测
 
 ```bash
-# 一个终端
-python bridge/bridge.py --simulate --http 8765
-
-# 另一个终端
-node test/smoke.mjs
-node test/web-routes.mjs     # 自己起 bridge，不用先开
-node test/client-half.mjs    # 只验装配，不渲染
+node test/smoke.mjs          # 自己起一个模拟 bridge，验全部工具
+node test/web-routes.mjs     # 自己起 bridge，验页面那几条路由
+node test/client-half.mjs    # 只验装配，不渲染 React
 ```
 
-`--simulate` 会造一路方波 + 一路斜坡 + 一路噪声，没有硬件也能验证整条链路。
+三个都是自包含的：不插板子、不启动 DSH，跑完自己收场。`--simulate` 会造一路方波 + 一路斜坡 + 一路噪声。
+
+想手动看波形：`python bridge/bridge.py --simulate --http 8765`，浏览器开 `http://127.0.0.1:8765/plot?window=5`。
 
 ## License
 
