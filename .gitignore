@@ -13,3 +13,4 @@ bridge/*.log.err
 
 data/
 out/
+*.tgz
