@@ -72,6 +72,17 @@ window.__ModuleLoader__.load({
         tuneSpeedLabel: '响应速度',
         tuneSteadyLabel: '稳态均值',
         tuneHint: '数值越大越在意这一项。规则写在插件目录的 rules/tuning-rules.md，AI 调参前会先读它。',
+        cardTitle: '调参卡（你写这个文件，插件每轮注入给模型）',
+        cardHint: '直接在这儿改、点保存就行，改完对下一轮生效，不用重启。写 {{kpOsc}} {{kiOsc}} {{speed}} {{steady}} 会替换成上面的滑块值。',
+        cardPath: '文件：{path}',
+        cardMissing: '文件还不存在（保存后就会建出来）',
+        cardDisabled: '调参卡已关闭（设置里 tuningCard），当前不会被注入',
+        cardEffective: '下面是替换占位符后、模型真正看到的内容：',
+        cardReload: '重新读',
+        cardSave: '保存卡',
+        cardSaving: '保存中…',
+        cardSaved: '存好了，下一轮就用这份',
+        cardSaveFail: '没存上',
         save: '保存',
         saving: '保存中…',
         saved: '存好了，已经生效',
@@ -135,6 +146,17 @@ window.__ModuleLoader__.load({
         tuneSpeedLabel: 'Response',
         tuneSteadyLabel: 'Steady value',
         tuneHint: 'Higher = care more. The rules live in rules/tuning-rules.md inside the plugin; the AI reads them before tuning.',
+        cardTitle: 'Tuning card (you write the file; it is injected every turn)',
+        cardHint: 'Edit and save right here. Takes effect next turn, no restart. {{kpOsc}} {{kiOsc}} {{speed}} {{steady}} are replaced with the sliders above.',
+        cardPath: 'File: {path}',
+        cardMissing: 'File does not exist yet (saving will create it)',
+        cardDisabled: 'Tuning card is off (tuningCard), so nothing is injected',
+        cardEffective: 'What the model actually sees (placeholders replaced):',
+        cardReload: 'Reload',
+        cardSave: 'Save card',
+        cardSaving: 'Saving…',
+        cardSaved: 'Saved; next turn uses this',
+        cardSaveFail: 'Save failed',
         save: 'Save',
         saving: 'Saving…',
         saved: 'Saved and applied',
@@ -281,6 +303,44 @@ window.__ModuleLoader__.load({
       const [draft, setDraft] = React.useState(null);
       const [saveMsg, setSaveMsg] = React.useState(null);
       const [settingsFile, setSettingsFile] = React.useState('');
+      // 调参卡：card 是磁盘上那份，cardDraft 是编辑中的文本
+      const [card, setCard] = React.useState(null);
+      const [cardDraft, setCardDraft] = React.useState('');
+      const [cardMsg, setCardMsg] = React.useState(null);
+      const [cardOpen, setCardOpen] = React.useState(false);
+
+      const loadCard = React.useCallback(async () => {
+        try {
+          const json = await getJson('/card');
+          if (json?.ok === false) {
+            setCardMsg({ ok: false, text: String(json.error ?? '读调参卡失败') });
+            return;
+          }
+          setCard(json ?? null);
+          setCardDraft(String(json?.content ?? ''));
+        } catch (error) {
+          setCardMsg({ ok: false, text: String(error?.message ?? error) });
+        }
+      }, []);
+
+      const saveCard = React.useCallback(async () => {
+        setBusy('save-card');
+        setCardMsg(null);
+        try {
+          const json = await postJson('/card', { content: cardDraft });
+          if (json?.ok) {
+            setCard(json);
+            setCardDraft(String(json.content ?? ''));
+            setCardMsg({ ok: true, text: t('cardSaved') });
+          } else {
+            setCardMsg({ ok: false, text: String(json?.error ?? t('cardSaveFail')) });
+          }
+        } catch (error) {
+          setCardMsg({ ok: false, text: String(error?.message ?? error) });
+        } finally {
+          setBusy(null);
+        }
+      }, [cardDraft, t]);
 
       const loadSettings = React.useCallback(async () => {
         try {
@@ -357,6 +417,7 @@ window.__ModuleLoader__.load({
         if (ports === null) void loadPorts();
         if (cfgInfo === null) void loadConfig();
         if (settings === null) void loadSettings();
+        if (card === null) void loadCard();
         if (status?.port && !port) setPort(String(status.port));
         if (status?.baud) setBaud(Number(status.baud));
       }, [ports, cfgInfo, settings, status?.port, status?.baud]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -756,6 +817,60 @@ window.__ModuleLoader__.load({
             h('div', { key: 'hint', className: 'ap-hint' }, t('configHint')),
             settingsFile
               ? h('div', { key: 'file', className: 'ap-foot' }, t('configFile').replace('{path}', settingsFile))
+              : null,
+          ]),
+        ]),
+
+        h('details', {
+          key: 'card',
+          className: 'ap-details',
+          open: cardOpen,
+          onToggle: (e) => setCardOpen(e.currentTarget.open),
+        }, [
+          h('summary', { key: 'sum' }, t('cardTitle')),
+          h('div', { key: 'body', style: { display: 'flex', flexDirection: 'column', gap: '8px' } }, [
+            card
+              ? h('div', { key: 'p', className: 'ap-foot' }, t('cardPath').replace('{path}', String(card.path ?? ''))
+                + (card.exists === false ? ' · ' + t('cardMissing') : ''))
+              : null,
+            card && card.enabled === false
+              ? h('div', { key: 'off', className: 'ap-warn' }, t('cardDisabled'))
+              : null,
+            h('textarea', {
+              key: 'ta',
+              className: 'ap-input',
+              style: { minHeight: '220px', fontFamily: 'var(--dsh-font-mono, monospace)', fontSize: '12px', lineHeight: '1.5', resize: 'vertical' },
+              value: cardDraft,
+              spellCheck: false,
+              onChange: (e) => setCardDraft(e.target.value),
+            }),
+            h('div', { key: 'hint2', className: 'ap-hint' }, t('cardHint')),
+            h('div', { key: 'row', className: 'ap-row' }, [
+              h('button', {
+                key: 'save',
+                type: 'button',
+                className: 'ap-btn primary',
+                disabled: busy !== null,
+                onClick: saveCard,
+              }, busy === 'save-card' ? t('cardSaving') : t('cardSave')),
+              h('button', {
+                key: 'reload',
+                type: 'button',
+                className: 'ap-btn',
+                disabled: busy !== null,
+                onClick: () => { void loadCard(); },
+              }, t('cardReload')),
+              cardMsg
+                ? h('span', { key: 'msg', className: cardMsg.ok ? 'ap-ok' : 'ap-warn' }, cardMsg.text)
+                : null,
+            ]),
+            card && card.effective
+              ? h('details', { key: 'eff' }, [
+                h('summary', { className: 'ap-hint' }, t('cardEffective')),
+                h('pre', {
+                  style: { whiteSpace: 'pre-wrap', fontSize: '12px', margin: '6px 0 0', opacity: 0.85 },
+                }, String(card.effective)),
+              ])
               : null,
           ]),
         ]),

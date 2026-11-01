@@ -85,7 +85,7 @@ pip install pyserial pillow
 dsh plugin --profile desktop add github:wellwelc/dsh-autoPID
 
 # 或者装 release 里的 tgz
-dsh plugin --profile desktop add https://github.com/wellwelc/dsh-autoPID/releases/download/v0.3.1/dsh-autopid-0.3.1.tgz
+dsh plugin --profile desktop add https://github.com/wellwelc/dsh-autoPID/releases/download/v0.3.2/dsh-autopid-0.3.2.tgz
 
 # 或者本地开发：link 进去
 dsh plugin --profile desktop add link:<本仓库绝对路径>
@@ -171,6 +171,8 @@ score = 100
 - 不想让它常驻：`tuningCard` 关掉，那样只有模型主动调 `autopid_tuning_rules` 才看得到规则
 - 卡里写 `{{kpOsc}}` `{{kiOsc}}` `{{speed}}` `{{steady}}` 会被替换成滑块上的当前值；不写就原样注入
 - 文件读不到时退回一段内置兜底文案，不会让插件报错
+
+**在面板里直接改**：设置页「自动调参」里有一块「调参卡」折叠区 —— 一个大输入框显示当前卡内容，改完点「保存卡」就写回文件（对下一轮生效），旁边还能「重新读」；下面会展开「模型实际看到的内容」（占位符已替换的那份），方便确认写对了。想换位置就在同一块的配置里填 `tuningCardPath`。
 
 ## 单片机的 printf 要长什么样
 
