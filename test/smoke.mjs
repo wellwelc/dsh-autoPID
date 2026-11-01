@@ -59,40 +59,79 @@ try {
 
   // 插件发现端口活着就直接复用，不会另起一个 bridge
   const { apply } = await import('../lib/index.js');
-  apply(ctx, { python: 'python', httpPort: PORT, port: '', baud: 115200 });
+  const csvPath = path.join(ROOT, 'out', 'smoke-data.csv');
+  try {
+    fs.rmSync(csvPath, { force: true });
+  } catch {}
+  apply(ctx, {
+    python: 'python',
+    httpPort: PORT,
+    port: '',
+    baud: 115200,
+    csvPath,
+    channels: 2,
+    channelNames: '左,右',
+    paramNames: 'kp,ki,kd',
+    setFormat: 'named',
+    cmdStart: 'GO',
+    cmdStop: 'HALT',
+    cmdReset: 'RST',
+  });
 
   console.log('注册到的工具：', [...tools.keys()].join(', '));
-  for (const name of ['autopid_samples', 'autopid_set']) {
+  for (const name of ['autopid_samples', 'autopid_set', 'autopid_command']) {
     if (!tools.has(name)) fail(`少了工具 ${name}`);
   }
 
-  await sleep(1200); // 等模拟数据攒一点
-
+  // 第一次调用工具时才会把配置同步给桥（CSV 从那之后才开始写），
+  // 所以先碰一下 status，再等数据攒起来。
   const status = await tools.get('autopid_status').execute({});
   console.log('status.connected =', status.connected, '| buffer =', status.buffer, '| channels =', status.channels);
+
+  await sleep(1500); // 等模拟数据写进 CSV
 
   const stats = await tools.get('autopid_stats').execute({ window: 2 });
   console.log('stats.points =', stats.points, '| channels =', stats.channels);
 
-  // 新工具：读原始数据
-  const samples = await tools.get('autopid_samples').execute({ window: 2, limit: 20 });
-  console.log('samples.rows =', samples.rows.length, '| t0 =', samples.t0, '| total =', samples.total);
+  // 读的是落盘的 CSV（有配置时）
+  const samples = await tools.get('autopid_samples').execute({ window: 60, limit: 20 });
+  console.log('samples.rows =', samples.rows.length, '| source =', samples.source, '| names =', JSON.stringify(samples.names));
+  if (samples.source !== 'csv') fail(`应该读 CSV，实际是 ${samples.source}`);
+  if (!fs.existsSync(csvPath)) fail('CSV 文件没生成');
   if (!samples.rows.length) fail('samples 一个点都没读到');
+  if ((samples.names ?? []).length !== 2) fail(`按配置应该是 2 路，实际 ${JSON.stringify(samples.names)}`);
   const widths = new Set(samples.rows.map((r) => r.length));
   if (widths.size !== 1) fail(`samples 行的列数不一致：${[...widths].join(' / ')}`);
   const rowTypes = samples.rows.every((r) => r.every((x) => typeof x === 'number'));
   if (!rowTypes) fail('samples 里出现了非数字');
 
   // 按通道挑选也要能用
-  const picked = await tools.get('autopid_samples').execute({ window: 2, limit: 5, channels: [0] });
+  const picked = await tools.get('autopid_samples').execute({ window: 60, limit: 5, channels: [0] });
   if (picked.rows.some((r) => r.length !== 2)) fail('channels 筛选后行宽应为 时间戳+1 列');
   console.log('samples 指定通道 =', JSON.stringify(picked.rows[0]));
 
-  // 新工具：改参数（模拟数据时没有真串口，这里验证它老实说"没发出去"）
+  // 没有表头、还带 UTF-8 BOM 的 CSV 也要能读（PowerShell 导出的文件常长这样）
+  const noHeader = path.join(ROOT, 'out', 'smoke-nohdr.csv');
+  fs.writeFileSync(noHeader, '\ufeff0.1,1.5,2.5\n0.2,1.6,2.6\n0.3,1.7,2.7\n', 'utf8');
+  const noHdr = await tools.get('autopid_samples').execute({ file: noHeader, limit: 10 });
+  if (noHdr.rows.length !== 3) fail(`无表头 CSV 应该读出 3 行，实际 ${noHdr.rows.length}`);
+  if (noHdr.rows[0][0] !== 0.1) fail(`BOM 没去掉：第一格是 ${noHdr.rows[0][0]}`);
+  console.log('无表头 CSV =', JSON.stringify(noHdr.rows));
+
+  // 参数下发：命名格式要能拼出来（模拟数据没有真串口，所以验证它老实说"没发出去"）
   const sent = await tools.get('autopid_set').execute({ values: [1.2, 0.03, 0.3], waitMs: 100 });
   const setText = tools.get('autopid_set').output.render({}, sent)[0].text;
   console.log('set 回执 =', setText.replace(/\n/g, ' / '));
   if (sent.ok) fail('模拟数据模式下 set 不该报成功');
+
+  // 启动 / 停止 / 重来：正文来自配置
+  const started = await tools.get('autopid_command').execute({ action: 'start', waitMs: 0 });
+  console.log('command.start =', started.ok, '| error =', started.error);
+  if (started.ok) fail('没开串口时 command 不该报成功');
+  const cmdCfg = await (await fetch(`${BASE}/config`)).json();
+  console.log('cmd 配置 =', cmdCfg.cmd_start, '/', cmdCfg.cmd_stop, '/', cmdCfg.cmd_reset);
+  if (cmdCfg.cmd_start !== 'GO' || cmdCfg.cmd_reset !== 'RST') fail('指令正文没同步到桥');
+  if (cmdCfg.set_format !== 'named') fail('set_format 没同步到桥');
 
   const plot = await tools.get('autopid_plot').execute({ window: 2 });
   const bytes = fs.readFileSync(plot.png_path);

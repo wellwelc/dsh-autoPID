@@ -52,9 +52,17 @@ window.__ModuleLoader__.load({
         noData: '还没有数据：选个串口点「打开」。没有硬件时可以用 autopid_open 的 simulate 让模型那边出一路假数据。',
         bridgeDown: '桥没起来：{error}',
         params: '参数下发',
-        kp: 'kp',
-        ki: 'ki',
-        kd: 'kd',
+        noParams: '配置里没写参数名（paramNames 是空的），先去插件配置里填',
+        badNumbers: '输入的参数里有没有数字的项',
+        commands: '运行控制',
+        start: '启动',
+        stop: '停止',
+        reset: '重来',
+        cmdHelp: '这三条指令的正文在插件配置里改（cmdStart / cmdStop / cmdReset），想发什么都行。',
+        csvLine: 'CSV：{path}',
+        csvOff: '没配（不落盘；在插件配置的 csvPath 里填绝对路径）',
+        chanLine: '通道：{n} 路（{names}）',
+        chanAuto: '配置里没写通道名',
         send: '下发',
         sending: '下发中…',
         sent: '{text}',
@@ -89,9 +97,17 @@ window.__ModuleLoader__.load({
         noData: 'No data yet: pick a port and press Open. Without hardware, ask the agent for autopid_open simulate.',
         bridgeDown: 'Bridge is down: {error}',
         params: 'Parameters',
-        kp: 'kp',
-        ki: 'ki',
-        kd: 'kd',
+        noParams: 'No parameter names configured (paramNames is empty). Fill it in the plugin config first.',
+        badNumbers: 'Some parameter is not a number',
+        commands: 'Run control',
+        start: 'Start',
+        stop: 'Stop',
+        reset: 'Reset',
+        cmdHelp: 'The texts come from the plugin config (cmdStart / cmdStop / cmdReset); anything works.',
+        csvLine: 'CSV: {path}',
+        csvOff: 'not configured (no CSV file; set csvPath in the plugin config)',
+        chanLine: 'Channels: {n} ({names})',
+        chanAuto: 'no channel names configured',
         send: 'Send',
         sending: 'Sending…',
         sent: '{text}',
@@ -214,9 +230,35 @@ window.__ModuleLoader__.load({
       const [portError, setPortError] = React.useState('');
       const [port, setPort] = React.useState('');
       const [baud, setBaud] = React.useState(115200);
-      const [kp, setKp] = React.useState('1.20');
-      const [ki, setKi] = React.useState('0.03');
-      const [kd, setKd] = React.useState('0.30');
+      // 参数名和个数由配置决定（param_names），界面跟着它长
+      const [cfgInfo, setCfgInfo] = React.useState(null);
+      const [values, setValues] = React.useState([]);
+
+      const paramNames = React.useMemo(
+        () => (Array.isArray(cfgInfo?.param_names) ? cfgInfo.param_names : []),
+        [cfgInfo],
+      );
+
+      const loadConfig = React.useCallback(async () => {
+        try {
+          const json = await getJson('/config');
+          if (json?.ok === false) {
+            setResult({ ok: false, error: String(json.error ?? '读配置失败') });
+            return;
+          }
+          setCfgInfo(json);
+          // 参数个数变了才重置输入框，别每秒钟都把用户输的数字清掉
+          setValues((prev) => {
+            const n = Array.isArray(json?.param_names) ? json.param_names.length : 0;
+            if (prev.length === n) return prev;
+            const next = new Array(n).fill('');
+            for (let i = 0; i < Math.min(n, prev.length); i += 1) next[i] = prev[i];
+            return next;
+          });
+        } catch (error) {
+          setResult({ ok: false, error: String(error?.message ?? error) });
+        }
+      }, []);
 
       const status = snap?.ok === false ? null : snap?.status ?? null;
       const reachable = snap?.ok !== false;
@@ -247,12 +289,13 @@ window.__ModuleLoader__.load({
         }
       }, [port]);
 
-      // 进面板先摸一次串口清单；第一次拿不到就等用户点刷新。
+      // 进面板先摸一次串口清单和配置；第一次拿不到就等用户点刷新。
       React.useEffect(() => {
         if (ports === null) void loadPorts();
+        if (cfgInfo === null) void loadConfig();
         if (status?.port && !port) setPort(String(status.port));
         if (status?.baud) setBaud(Number(status.baud));
-      }, [ports, status?.port, status?.baud]); // eslint-disable-line react-hooks/exhaustive-deps
+      }, [ports, cfgInfo, status?.port, status?.baud]); // eslint-disable-line react-hooks/exhaustive-deps
 
       const run = (kind, task) => {
         setBusy(kind);
@@ -280,12 +323,16 @@ window.__ModuleLoader__.load({
       };
 
       const sendParams = () => {
-        const values = [kp, ki, kd].map((x) => Number(x)).filter((x) => Number.isFinite(x));
-        if (!values.length) {
-          setResult({ ok: false, error: '三个参数都不像数字' });
+        const nums = values.map((x) => Number(x));
+        if (!nums.length) {
+          setResult({ ok: false, error: t('noParams') });
           return;
         }
-        run('send', postJson('/set', { values }).then((r) => setResult(r)));
+        if (nums.some((x) => !Number.isFinite(x))) {
+          setResult({ ok: false, error: t('badNumbers') });
+          return;
+        }
+        run('send', postJson('/set', { values: nums }).then((r) => setResult(r)));
       };
 
       // 时间窗 / 归一化 / 通道变了就换一张图；暂停时连 t 都不动。
@@ -440,33 +487,57 @@ window.__ModuleLoader__.load({
         h('div', { key: 'params', className: 'ap-card' }, [
           h('div', { key: 'row', className: 'ap-row' }, [
             h('span', { key: 'title', className: 'ap-label' }, t('params')),
-            h('span', { key: 'l1', className: 'ap-label' }, t('kp')),
-            h('input', {
-              key: 'kp', className: 'ap-input tiny', type: 'text', value: kp,
-              onChange: (e) => setKp(e.target.value),
-            }),
-            h('span', { key: 'l2', className: 'ap-label' }, t('ki')),
-            h('input', {
-              key: 'ki', className: 'ap-input tiny', type: 'text', value: ki,
-              onChange: (e) => setKi(e.target.value),
-            }),
-            h('span', { key: 'l3', className: 'ap-label' }, t('kd')),
-            h('input', {
-              key: 'kd', className: 'ap-input tiny', type: 'text', value: kd,
-              onChange: (e) => setKd(e.target.value),
-            }),
+            ...paramNames.map((name, index) => h('span', { key: `l${index}`, className: 'ap-label' }, name)),
+            ...paramNames.map((name, index) => h('input', {
+              key: `v${index}`,
+              className: 'ap-input tiny',
+              type: 'text',
+              value: values[index] ?? '',
+              placeholder: '0',
+              'aria-label': name,
+              onChange: (e) => {
+                const next = [...values];
+                next[index] = e.target.value;
+                setValues(next);
+              },
+            })),
             h('button', {
               key: 'send',
               type: 'button',
               className: 'ap-btn primary',
-              disabled: busy !== null,
+              disabled: busy !== null || paramNames.length === 0,
               onClick: sendParams,
             }, busy === 'send' ? t('sending') : t('send')),
           ]),
+          paramNames.length === 0
+            ? h('div', { key: 'noParams', className: 'ap-warn' }, t('noParams'))
+            : null,
           h('div', { key: 'help', className: 'ap-hint' }, t('help')),
         ]),
 
-        h('div', { key: 'foot', className: 'ap-foot' }, t('hint')),
+        h('div', { key: 'cmd', className: 'ap-card' }, [
+          h('div', { key: 'row', className: 'ap-row' }, [
+            h('span', { key: 'title', className: 'ap-label' }, t('commands')),
+            ...['start', 'stop', 'reset'].map((action) => h('button', {
+              key: action,
+              type: 'button',
+              className: action === 'start' ? 'ap-btn primary' : 'ap-btn',
+              disabled: busy !== null,
+              onClick: () => run(`cmd-${action}`, postJson('/command', { action }).then((r) => setResult(r))),
+              title: String(cfgInfo?.[`cmd_${action}`] ?? ''),
+            }, busy === `cmd-${action}` ? '…' : t(action))),
+          ]),
+          h('div', { key: 'help', className: 'ap-hint' }, t('cmdHelp')),
+        ]),
+
+        h('div', { key: 'foot', className: 'ap-foot' }, [
+          h('span', { key: 'f1', style: { display: 'block' } }, t('csvLine').replace('{path}', cfgInfo?.csv_path ? String(cfgInfo.csv_path) : t('csvOff'))),
+          h('span', { key: 'f2', style: { display: 'block' } },
+            t('chanLine')
+              .replace('{n}', String(cfgInfo?.channels || 0))
+              .replace('{names}', (cfgInfo?.channel_names ?? []).join(' / ') || t('chanAuto'))),
+          h('span', { key: 'f3' }, t('hint')),
+        ]),
       ]);
     }
 

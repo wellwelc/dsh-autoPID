@@ -9,7 +9,13 @@
 #
 # 注意：inject 里带 webServer，只有 web 侧组合才有这个服务 —— 别装进 headless profile。
 #
-# config 里的字段会同时出现在 DSH 的设置页里（可热改）。
+# config 里的字段会同时出现在 DSH 的设置页里（可热改）：
+#   csvPath      收到的数据追加到这个 .csv（绝对路径）；空 = 不落盘
+#   channels     保留前几路；0 = 按第一行自动
+#   channelNames 通道名（决定 CSV 表头），逗号分隔
+#   paramNames   下发参数的名字和个数，逗号分隔；顺序 = 数值顺序
+#   setFormat    positional -> "SET 1.2 0.03 0.3"；named -> "SET kp=1.2 ki=0.03 kd=0.3"
+#   cmdStart / cmdStop / cmdReset  启动 / 停止 / 重来 三条指令的正文
 - insert:
     - id: dsh-autopid
       name: dsh-autopid
@@ -18,3 +24,11 @@
         httpPort: 8765
         port: ''
         baud: 115200
+        csvPath: ''
+        channels: 0
+        channelNames: ''
+        paramNames: 'kp,ki,kd'
+        setFormat: positional
+        cmdStart: START
+        cmdStop: STOP
+        cmdReset: RESET

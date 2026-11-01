@@ -99,10 +99,10 @@ try {
 
   mod.apply(ctx, { python: 'python', httpPort: PORT, port: '', baud: 115200 });
 
-  check('七个工具都注册了', tools.length === 7 && tools.includes('autopid_samples'),
+  check('八个工具都注册了', tools.length === 8 && tools.includes('autopid_samples') && tools.includes('autopid_command'),
     tools.join(','));
   const paths = [...handlers.keys()].sort();
-  check('七条路由都挂上了', paths.length === 7, paths.join(' '));
+  check('九条路由都挂上了', paths.length === 9, paths.join(' '));
 
   // 等模拟数据攒一点
   await sleep(1200);
@@ -133,6 +133,19 @@ try {
   const setJson = JSON.parse(set.body.toString());
   check('POST /set 没开真串口时老实报失败', setJson.ok === false && typeof setJson.error === 'string',
     `error=${setJson.error}`);
+
+  const cfg = await call(handlers.get('/api/autopid/config'), { url: '/api/autopid/config' });
+  const cfgJson = JSON.parse(cfg.body.toString());
+  check('GET /config 回参数名和指令正文',
+    cfgJson.ok === true
+      && Array.isArray(cfgJson.param_names) && cfgJson.param_names.length === 3
+      && typeof cfgJson.cmd_start === 'string',
+    `param_names=${JSON.stringify(cfgJson.param_names)} cmd_start=${cfgJson.cmd_start}`);
+
+  const cmd = await call(handlers.get('/api/autopid/command'),
+    { url: '/api/autopid/command', method: 'POST', body: { action: 'start' } });
+  const cmdJson = JSON.parse(cmd.body.toString());
+  check('POST /command 没开串口时老实报失败', cmdJson.ok === false, `error=${cmdJson.error}`);
 
   const forbidden = await call(handlers.get('/api/autopid/state'),
     { url: '/api/autopid/state', ip: '10.0.0.9' });
