@@ -72,6 +72,11 @@ window.__ModuleLoader__.load({
         tuneSpeedLabel: '响应速度',
         tuneSteadyLabel: '稳态均值',
         tuneHint: '数值越大越在意这一项。规则写在插件目录的 rules/tuning-rules.md，AI 调参前会先读它。',
+        outTitle: '波形图文件夹',
+        outOpen: '打开文件夹',
+        outCount: '里面有 {n} 张图，最新一张：{latest}',
+        outEmpty: '还没有图（模型画一次就会多一张）',
+        outFail: '打不开文件夹',
         cardTitle: '调参卡（你写这个文件，插件每轮注入给模型）',
         cardHint: '直接在这儿改、点保存就行，改完对下一轮生效，不用重启。写 {{kpOsc}} {{kiOsc}} {{speed}} {{steady}} 会替换成上面的滑块值。',
         cardPath: '文件：{path}',
@@ -157,6 +162,11 @@ window.__ModuleLoader__.load({
         cardSaving: 'Saving…',
         cardSaved: 'Saved; next turn uses this',
         cardSaveFail: 'Save failed',
+        outTitle: 'Plot folder',
+        outOpen: 'Open folder',
+        outCount: '{n} images, newest: {latest}',
+        outEmpty: 'No images yet (they appear when the model plots once)',
+        outFail: 'Could not open the folder',
         save: 'Save',
         saving: 'Saving…',
         saved: 'Saved and applied',
@@ -323,7 +333,40 @@ window.__ModuleLoader__.load({
         }
       }, []);
 
+      // 波形图文件夹：显示有多少张、最新一张叫什么，一键用系统文件管理器打开
+      const [outInfo, setOutInfo] = React.useState(null);
+      const [outMsg, setOutMsg] = React.useState(null);
+
+      const loadOut = React.useCallback(async () => {
+        try {
+          const json = await getJson('/out');
+          setOutInfo(json ?? null);
+        } catch (error) {
+          setOutInfo(null);
+          setOutMsg({ ok: false, text: String(error?.message ?? error) });
+        }
+      }, []);
+
+      const openOut = React.useCallback(async () => {
+        setBusy('open-out');
+        setOutMsg(null);
+        try {
+          const json = await postJson('/open-out', {});
+          if (json?.ok) {
+            setOutMsg({ ok: true, text: String(json.path ?? '') });
+          } else {
+            setOutMsg({ ok: false, text: String(json?.error ?? t('outFail')) });
+          }
+          void loadOut();
+        } catch (error) {
+          setOutMsg({ ok: false, text: String(error?.message ?? error) });
+        } finally {
+          setBusy(null);
+        }
+      }, [loadOut, t]);
+
       const saveCard = React.useCallback(async () => {
+
         setBusy('save-card');
         setCardMsg(null);
         try {
@@ -418,6 +461,7 @@ window.__ModuleLoader__.load({
         if (cfgInfo === null) void loadConfig();
         if (settings === null) void loadSettings();
         if (card === null) void loadCard();
+        if (outInfo === null) void loadOut();
         if (status?.port && !port) setPort(String(status.port));
         if (status?.baud) setBaud(Number(status.baud));
       }, [ports, cfgInfo, settings, status?.port, status?.baud]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -819,6 +863,26 @@ window.__ModuleLoader__.load({
               ? h('div', { key: 'file', className: 'ap-foot' }, t('configFile').replace('{path}', settingsFile))
               : null,
           ]),
+        ]),
+
+        h('div', { key: 'outdir', className: 'ap-row', style: { marginTop: '10px', flexWrap: 'wrap' } }, [
+          h('span', { key: 'l', className: 'ap-label' }, t('outTitle')),
+          h('button', {
+            key: 'b',
+            type: 'button',
+            className: 'ap-btn',
+            disabled: busy !== null,
+            onClick: () => { void openOut(); },
+          }, busy === 'open-out' ? '…' : t('outOpen')),
+          outInfo
+            ? h('span', { key: 'i', className: 'ap-foot' },
+              outInfo.count
+                ? t('outCount').replace('{n}', String(outInfo.count)).replace('{latest}', String(outInfo.latest ?? ''))
+                : t('outEmpty'))
+            : null,
+          outMsg
+            ? h('span', { key: 'm', className: outMsg.ok ? 'ap-ok' : 'ap-warn' }, outMsg.text)
+            : null,
         ]),
 
         h('details', {

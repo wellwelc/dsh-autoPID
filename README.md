@@ -85,7 +85,7 @@ pip install pyserial pillow
 dsh plugin --profile desktop add github:wellwelc/dsh-autoPID
 
 # 或者装 release 里的 tgz
-dsh plugin --profile desktop add https://github.com/wellwelc/dsh-autoPID/releases/download/v0.3.2/dsh-autopid-0.3.2.tgz
+dsh plugin --profile desktop add https://github.com/wellwelc/dsh-autoPID/releases/download/v0.3.3/dsh-autopid-0.3.3.tgz
 
 # 或者本地开发：link 进去
 dsh plugin --profile desktop add link:<本仓库绝对路径>
@@ -125,7 +125,7 @@ $env:HTTP_PROXY="http://127.0.0.1:7897"; $env:HTTPS_PROXY="http://127.0.0.1:7897
 | `autopid_status` | 连接状态、收了多少行、缓冲多少点、数据多旧 |
 | `autopid_stats` | 每通道 min/max/mean/rms/峰峰 + 振荡频率估计 |
 | `autopid_samples` | **读落盘的 CSV**（默认 `csvPath`，可传 `file` 读任意 CSV），支持 `window` / `start,end` / `limit` / `channels`；想自己算超调、上升时间、稳态误差用它 |
-| `autopid_plot` | 出图，支持 `window` / `start,end` / `channels` / `normalize`；**只回文件路径，不内联图片** |
+| `autopid_plot` | 出图，支持 `window` / `start,end` / `channels` / `normalize` / **`width` / `height`**（想看细节给 3200）；**只回文件路径，不内联图片** |
 | `autopid_set` | 按 `paramNames` / `setFormat` 下发参数（或 `raw` 发原文），**并回报发完之后 `waitMs` 内有没有新数据进来** |
 | `autopid_command` | **启动 / 停止 / 重来**（`action: start\|stop\|reset`，或 `raw` 发任意文本），正文来自配置；同样回报有没有新数据 |
 | `autopid_config` | 读 / 改配置（跟面板那张「配置」卡片是同一份数据，改完立即生效并写盘） |
