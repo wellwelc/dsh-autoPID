@@ -66,6 +66,12 @@ window.__ModuleLoader__.load({
         channelNamesLabel: '通道名（逗号分隔）',
         paramNamesLabel: '参数名（逗号分隔，顺序=数值顺序）',
         setFormatLabel: '下发格式',
+        tuneTitle: '调参关注度（AI 按这些权重挑参数）',
+        tuneKpOscLabel: 'Kp 抖动',
+        tuneKiOscLabel: 'Ki 摆动',
+        tuneSpeedLabel: '响应速度',
+        tuneSteadyLabel: '稳态均值',
+        tuneHint: '数值越大越在意这一项。规则写在插件目录的 rules/tuning-rules.md，AI 调参前会先读它。',
         save: '保存',
         saving: '保存中…',
         saved: '存好了，已经生效',
@@ -123,6 +129,12 @@ window.__ModuleLoader__.load({
         channelNamesLabel: 'Channel names (comma separated)',
         paramNamesLabel: 'Parameter names (comma separated, order = value order)',
         setFormatLabel: 'Send format',
+        tuneTitle: 'Tuning focus (the AI picks gains by these weights)',
+        tuneKpOscLabel: 'Kp ripple',
+        tuneKiOscLabel: 'Ki swing',
+        tuneSpeedLabel: 'Response',
+        tuneSteadyLabel: 'Steady value',
+        tuneHint: 'Higher = care more. The rules live in rules/tuning-rules.md inside the plugin; the AI reads them before tuning.',
         save: 'Save',
         saving: 'Saving…',
         saved: 'Saved and applied',
@@ -366,6 +378,10 @@ window.__ModuleLoader__.load({
           cmdStart: draft.cmdStart,
           cmdStop: draft.cmdStop,
           cmdReset: draft.cmdReset,
+          tuneKpOsc: draft.tuneKpOsc,
+          tuneKiOsc: draft.tuneKiOsc,
+          tuneSpeed: draft.tuneSpeed,
+          tuneSteady: draft.tuneSteady,
         })
           .then((r) => {
             if (r?.ok) {
@@ -705,6 +721,26 @@ window.__ModuleLoader__.load({
                 }),
               ]),
             ]),
+            h('div', { key: 'tuneTitle', className: 'ap-label', style: { marginTop: '4px' } }, t('tuneTitle')),
+            h('div', { key: 'grid4', className: 'ap-grid' }, [
+              ['tuneKpOsc', 'tuneKpOscLabel'],
+              ['tuneKiOsc', 'tuneKiOscLabel'],
+              ['tuneSpeed', 'tuneSpeedLabel'],
+              ['tuneSteady', 'tuneSteadyLabel'],
+            ].map(([key, labelKey]) => h('label', { key, className: 'ap-field' }, [
+              h('span', { key: 'l', className: 'ap-label' }, `${t(labelKey)}：${draft?.[key] ?? 0}`),
+              h('input', {
+                key: 'i',
+                className: 'ap-input',
+                type: 'range',
+                min: 0,
+                max: 100,
+                step: 5,
+                value: draft?.[key] ?? 0,
+                onChange: (e) => setField(key, Number(e.target.value) || 0),
+              }),
+            ]))),
+            h('div', { key: 'tuneHint', className: 'ap-hint' }, t('tuneHint')),
             h('div', { key: 'actions', className: 'ap-row' }, [
               h('button', {
                 key: 'save',

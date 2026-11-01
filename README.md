@@ -68,13 +68,26 @@ CSV 里变成:     1793533217.971,30.000000,28.000000,1500.000000,1500.000000
 pip install pyserial pillow
 ```
 
-2. 把本仓库 `link:` 进 DSH profile：
+2. 装进 DSH profile（三选一）：
 
 ```bash
+# 直接从 GitHub 装（推荐给"别人下下来就能用"）
+dsh plugin --profile desktop add github:wellwelc/dsh-autoPID
+
+# 或者装 release 里的 tgz
+dsh plugin --profile desktop add https://github.com/wellwelc/dsh-autoPID/releases/download/v0.3.0/dsh-autopid-0.3.0.tgz
+
+# 或者本地开发：link 进去
 dsh plugin --profile desktop add link:<本仓库绝对路径>
 ```
 
-或者直接改 `~/.dsh/profiles/desktop/package.json` 的 `dependencies` 加一行
+国内网络记得先设代理或换镜像，否则 pnpm 拉包会卡：
+
+```powershell
+$env:HTTP_PROXY="http://127.0.0.1:7897"; $env:HTTPS_PROXY="http://127.0.0.1:7897"
+```
+
+也可以直接改 `~/.dsh/profiles/desktop/package.json` 的 `dependencies` 加一行
 `"dsh-autopid": "link:C:/path/to/dsh-autoPID"`，再把 `dsh-autopid` 加进
 `dsh.profile.bundles`。
 
@@ -106,8 +119,38 @@ dsh plugin --profile desktop add link:<本仓库绝对路径>
 | `autopid_set` | 按 `paramNames` / `setFormat` 下发参数（或 `raw` 发原文），**并回报发完之后 `waitMs` 内有没有新数据进来** |
 | `autopid_command` | **启动 / 停止 / 重来**（`action: start\|stop\|reset`，或 `raw` 发任意文本），正文来自配置；同样回报有没有新数据 |
 | `autopid_config` | 读 / 改配置（跟面板那张「配置」卡片是同一份数据，改完立即生效并写盘） |
+| `autopid_tuning_rules` | 读**插件内置的调参规则**（`rules/tuning-rules.md`）+ 当前四个关注度权重；传 `metrics` 还会按权重打分（`steadyErr` / `riseMs` / `ripple` / `swing`） |
 
 下发类工具的回执是刻意分开说的：「新来了 N 行」= 单片机有反应；「一行都没有」= **只是没观察到**，不等于指令没生效，别当成反证。
+
+## 调参规则与关注度（这份是给模型看的）
+
+调参这件事最怕模型凭直觉加大增益。所以规则不写在提示词里，**写进插件自己的文件**：
+
+`rules/tuning-rules.md` —— 机理（增量式 PID 为什么稳态靠 Ki）、流程（先 Ki 再 Kp 最后 Kd）、每轮必记的四项指标、以及几条硬性红线（单步放大不超过 2 倍、先 STOP 再改、能空转就空转、异常先退回安全值）。
+
+**四个权重由人来定**，在设置页里是四条滑块（0~100），存进 `~/.dsh/autopid/settings.json`：
+
+| 字段 | 关注什么 | 默认 |
+|---|---|---|
+| `tuneKpOsc` | Kp 引起的高频抖动 | 40 |
+| `tuneKiOsc` | Ki 引起的低频摆动 / 超调 | 50 |
+| `tuneSpeed` | 响应速度（上升时间） | 50 |
+| `tuneSteady` | 稳态均值 / 稳态误差 | 60 |
+
+模型每次调参前调 `autopid_tuning_rules`，拿到规则全文 + 当前权重，按规则推进、按权重打分：
+
+```
+score = 100
+      - tuneSteady × steadyErr%  / 100
+      - tuneSpeed  × riseMs      / 100
+      - tuneKpOsc  × rippleRatio / 100
+      - tuneKiOsc  × swingRatio  / 100
+```
+
+权重调高 → 模型更在意那一项；想让它别把车调抖，就把 `tuneKpOsc` 拉大。**规则里写死的红线不受权重影响**，权重只决定取舍方向。
+
+改完 `rules/tuning-rules.md` 不用重启，下次调 `autopid_tuning_rules` 就是新版。
 
 ## 单片机的 printf 要长什么样
 
@@ -159,11 +202,13 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 dsh-autoPID/
 ├── lib/index.js          # Host 半：工具 + /api/autopid/* 同源路由 + 拉起 bridge
 ├── client.js             # Client 半：「设置 → 插件 → 自动调参」面板
+├── rules/tuning-rules.md # 调参规则（给模型看的操作手册，可自己改）
 ├── bridge/bridge.py      # 串口读写 + 缓冲 + HTTP + Pillow 画图
 ├── bridge/requirements.txt
 ├── test/smoke.mjs        # 工具那半（自己起模拟 bridge）
 ├── test/web-routes.mjs   # /api/autopid/* 那半（真起 bridge）
 ├── test/client-half.mjs  # Client 半的装配（不渲染 React）
+├── test/tuning-rules.mjs # 调参规则工具（读文件、打分、权重生效）
 ├── cordis.patch.yml
 └── package.json
 ```
@@ -174,6 +219,7 @@ dsh-autoPID/
 node test/smoke.mjs          # 自己起一个模拟 bridge，验全部工具
 node test/web-routes.mjs     # 自己起 bridge，验页面那几条路由
 node test/client-half.mjs    # 只验装配，不渲染 React
+node test/tuning-rules.mjs   # 调参规则工具：读文件、打分、权重改动生效（纯逻辑，不用串口）
 ```
 
 三个都是自包含的：不插板子、不启动 DSH，跑完自己收场。`--simulate` 会造一路方波 + 一路斜坡 + 一路噪声。

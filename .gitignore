@@ -12,5 +12,4 @@ bridge/*.log
 bridge/*.log.err
 
 data/
-out/*.csv
-out/*.log
+out/

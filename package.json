@@ -1,7 +1,7 @@
 {
   "name": "dsh-autopid",
-  "version": "0.2.0",
-  "description": "DSH autoPID: 串口波形 + PID 自动整定的工具插件（串口由 Python 桥负责，波形显示在「设置 → 插件 → 自动调参」里）",
+  "version": "0.3.0",
+  "description": "DSH autoPID: 串口波形 + PID 调参的工具插件（串口由 Python 桥负责，波形显示在「设置 → 插件 → 自动调参」里，内置调参规则与四个关注度权重）",
   "type": "module",
   "main": "./lib/index.js",
   "exports": {
@@ -11,12 +11,32 @@
   "files": [
     "lib/index.js",
     "client.js",
+    "rules/tuning-rules.md",
     "bridge/bridge.py",
     "bridge/requirements.txt",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wellwelc/dsh-autoPID.git"
+  },
+  "homepage": "https://github.com/wellwelc/dsh-autoPID#readme",
+  "bugs": {
+    "url": "https://github.com/wellwelc/dsh-autoPID/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "serial",
+    "uart",
+    "pid",
+    "tuning",
+    "oscilloscope"
+  ],
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
