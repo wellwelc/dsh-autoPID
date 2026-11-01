@@ -4,6 +4,16 @@
 
 波形显示在 DSH 自己的界面里：**设置 → 插件 → 自动调参**。串口由 Python 桥独占，DSH 不碰串口。
 
+## 三步装起来
+
+```bash
+pip install pyserial pillow                                  # 1. Python 依赖（桥要用）
+dsh plugin --profile desktop add github:wellwelc/dsh-autoPID # 2. 装插件
+# 3. 重启 DSH，然后 设置 → 插件 → 自动调参 里选串口、填波特率、打开
+```
+
+装完就能用：单片机按 `printf("%d,%d,%d\r\n", ...)` 往外发，面板里就有波形；让模型调 `autopid_stats` / `autopid_plot` 看统计和出图；调参时它先读 `rules/tuning-rules.md`，再按你在滑块上给的四项关注度打分推进。
+
 ```
 单片机 ──printf──> 串口 ──> bridge.py(pyserial) ──┬──> CSV 落盘（模型读的就是它）
                                                  ├──> Host 路由 /api/autopid/* ──> 设置页里的实时波形
