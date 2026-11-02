@@ -110,10 +110,12 @@ try {
     cmdStart: 'START',
   });
 
-  check('九个工具都注册了', tools.length === 9 && tools.includes('autopid_samples')
-    && tools.includes('autopid_command') && tools.includes('autopid_config'), tools.join(','));
+  check('十个工具都注册了', tools.length === 10 && tools.includes('autopid_samples')
+    && tools.includes('autopid_command') && tools.includes('autopid_config')
+    && tools.includes('autopid_tuning_rules'), tools.join(','));
   const paths = [...handlers.keys()].sort();
-  check('十条路由都挂上了', paths.length === 10, paths.join(' '));
+  check('十三条路由都挂上了', paths.length === 13 && paths.includes('/api/autopid/card')
+    && paths.includes('/api/autopid/out') && paths.includes('/api/autopid/open-out'), paths.join(' '));
 
   // 等模拟数据攒一点
   await sleep(1200);
