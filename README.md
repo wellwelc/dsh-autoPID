@@ -1,5 +1,7 @@
 # dsh-autoPID
 
+> **这份 README 是写给 AI（大肥鱼）读的。** 你要是被丢过来一句「帮我把这个插件装上、接上串口、调调参」，就照这份文档走：先看「三步装起来」，再看「怎么用」九步（第 1 步是板子侧解析，别跳过），卡住了翻 Q&A。里面的坑都是真踩过的，不是凑字数。
+
 给 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 用的**串口波形图 + PID 调参**插件。
 
 波形显示在 DSH 自己的界面里：**设置 → 插件 → 自动调参**。串口由 Python 桥独占，DSH 不碰串口。
